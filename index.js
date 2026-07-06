@@ -1,4 +1,4 @@
-import makeWASocket, { useMultiFileAuthState, DisconnectReason } from 'baileys';
+import makeWASocket, { useMultiFileAuthState, DisconnectReason } from '@whiskeysockets/baileys';
 import qrcodeLib from 'qrcode';
 import pino from 'pino';
 import http from 'http';
