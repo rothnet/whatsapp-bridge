@@ -1,9 +1,34 @@
 import makeWASocket, { useMultiFileAuthState, DisconnectReason } from '@whiskeysockets/baileys';
-import qrcode from 'qrcode-terminal';
+import qrcodeLib from 'qrcode';
 import pino from 'pino';
+import http from 'http';
 
 const WEBHOOK_URL = process.env.WEBHOOK_URL;
 const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET;
+const PORT = process.env.PORT || 3000;
+
+let currentQR = null;
+let connectionStatus = 'מתחבר...';
+
+// שרת קטן שמציג את ה-QR בדף אינטרנט
+http.createServer(async (req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+  if (currentQR) {
+    const qrImage = await qrcodeLib.toDataURL(currentQR);
+    res.end(`<html dir="rtl"><body style="text-align:center;font-family:sans-serif;padding-top:40px">
+      <h2>סרוק את הקוד עם וואטסאפ</h2>
+      <img src="${qrImage}" style="width:300px"/>
+      <p>וואטסאפ ← הגדרות ← מכשירים מקושרים ← קישור מכשיר</p>
+      <p>הדף מתרענן אוטומטית</p>
+      <script>setTimeout(()=>location.reload(),5000)</script>
+    </body></html>`);
+  } else {
+    res.end(`<html dir="rtl"><body style="text-align:center;font-family:sans-serif;padding-top:40px">
+      <h2>${connectionStatus}</h2>
+      <script>setTimeout(()=>location.reload(),5000)</script>
+    </body></html>`);
+  }
+}).listen(PORT, () => console.log(`שרת רץ על פורט ${PORT}`));
 
 async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState('auth');
@@ -19,16 +44,20 @@ async function startBot() {
     const { connection, lastDisconnect, qr } = update;
 
     if (qr) {
-      console.log('=== סרוק את הקוד הבא עם וואטסאפ ===');
-      qrcode.generate(qr, { small: true });
+      currentQR = qr;
+      connectionStatus = 'ממתין לסריקה...';
+      console.log('QR מוכן - פתח את הדף כדי לסרוק');
     }
 
     if (connection === 'close') {
+      currentQR = null;
       const shouldReconnect =
         lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
-      console.log('החיבור נסגר. מתחבר מחדש:', shouldReconnect);
+      connectionStatus = 'החיבור נסגר, מתחבר מחדש...';
       if (shouldReconnect) startBot();
     } else if (connection === 'open') {
+      currentQR = null;
+      connectionStatus = '✅ מחובר לוואטסאפ!';
       console.log('✅ מחובר לוואטסאפ בהצלחה!');
     }
   });
@@ -38,7 +67,7 @@ async function startBot() {
     if (!msg.message || msg.key.fromMe) return;
 
     const from = msg.key.remoteJid;
-    if (from.endsWith('@g.us')) return; // מתעלם מקבוצות
+    if (from.endsWith('@g.us')) return;
 
     const text =
       msg.message.conversation ||
@@ -50,7 +79,7 @@ async function startBot() {
     console.log(`הודעה מ-${phone}: ${text}`);
 
     try {
-      const res = await fetch(WEBHOOK_URL, {
+      const response = await fetch(WEBHOOK_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -59,7 +88,7 @@ async function startBot() {
         body: JSON.stringify({ phone_number: phone, message_text: text }),
       });
 
-      const data = await res.json();
+      const data = await response.json();
       const reply = data.reply || data.message || 'לא התקבלה תשובה.';
       await sock.sendMessage(from, { text: reply });
       console.log(`נשלחה תשובה ל-${phone}`);
