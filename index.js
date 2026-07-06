@@ -1,16 +1,15 @@
-import makeWASocket, { useMultiFileAuthState, DisconnectReason } from '@whiskeysockets/baileys';
+import makeWASocket, { useMultiFileAuthState, DisconnectReason } from 'baileys';
 import qrcodeLib from 'qrcode';
 import pino from 'pino';
 import http from 'http';
 
 const WEBHOOK_URL = process.env.WEBHOOK_URL;
 const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET;
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8080;
 
 let currentQR = null;
 let connectionStatus = 'מתחבר...';
 
-// שרת קטן שמציג את ה-QR בדף אינטרנט
 http.createServer(async (req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
   if (currentQR) {
@@ -20,12 +19,12 @@ http.createServer(async (req, res) => {
       <img src="${qrImage}" style="width:300px"/>
       <p>וואטסאפ ← הגדרות ← מכשירים מקושרים ← קישור מכשיר</p>
       <p>הדף מתרענן אוטומטית</p>
-      <script>setTimeout(()=>location.reload(),5000)</script>
+      <script>setTimeout(()=>location.reload(),8000)</script>
     </body></html>`);
   } else {
     res.end(`<html dir="rtl"><body style="text-align:center;font-family:sans-serif;padding-top:40px">
       <h2>${connectionStatus}</h2>
-      <script>setTimeout(()=>location.reload(),5000)</script>
+      <script>setTimeout(()=>location.reload(),8000)</script>
     </body></html>`);
   }
 }).listen(PORT, () => console.log(`שרת רץ על פורט ${PORT}`));
@@ -36,6 +35,7 @@ async function startBot() {
   const sock = makeWASocket({
     auth: state,
     logger: pino({ level: 'silent' }),
+    browser: ['WhatsApp Bridge', 'Chrome', '1.0.0'],
   });
 
   sock.ev.on('creds.update', saveCreds);
@@ -51,10 +51,13 @@ async function startBot() {
 
     if (connection === 'close') {
       currentQR = null;
-      const shouldReconnect =
-        lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+      const statusCode = lastDisconnect?.error?.output?.statusCode;
+      const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
       connectionStatus = 'החיבור נסגר, מתחבר מחדש...';
-      if (shouldReconnect) startBot();
+      console.log('החיבור נסגר. קוד:', statusCode, 'מתחבר מחדש:', shouldReconnect);
+      if (shouldReconnect) {
+        setTimeout(startBot, 3000);
+      }
     } else if (connection === 'open') {
       currentQR = null;
       connectionStatus = '✅ מחובר לוואטסאפ!';
